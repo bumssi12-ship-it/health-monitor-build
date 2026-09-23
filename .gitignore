@@ -1,0 +1,40 @@
+.DS_Store
+.build/
+DerivedData/
+*.xcuserstate
+*.xccheckout
+*.moved-aside
+xcuserdata/
+HealthMonitor.xcodeproj/
+build-logs/
+
+# Runtime data
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+
+# Signing / secrets
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+*.key
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+
+# Windows
+Thumbs.db
+desktop.ini
+# Local one-click pipeline state
+.pipeline-state/
+START_LAST_RESULT.txt
+repair-backups/
+*.before-v*
+*.before-count-fix-*

@@ -1,0 +1,157 @@
+name: Health Monitor Public Apple Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: health-monitor-public-build
+  cancel-in-progress: true
+
+jobs:
+  apple-build:
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    env:
+      MIN_XCODEGEN_VERSION: "2.46.0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Environment
+        run: |
+          set -euo pipefail
+          {
+            xcodebuild -version
+            sw_vers
+            swift --version
+          } | tee environment.txt
+
+      - name: Verify privacy surface
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_privacy_surface.py
+          plutil -lint HealthMonitor/PrivacyInfo.xcprivacy
+
+      - name: Verify DatabaseManager structure
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_database_manager_structure.py
+
+      - name: Core tests
+        run: |
+          set -euo pipefail
+          swift test
+
+      - name: Install XcodeGen
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          xcodegen --version | tee xcodegen-version.txt
+
+          python3 - <<'PY'
+          import os, re, subprocess
+
+          text = subprocess.check_output(
+              ["xcodegen", "--version"],
+              text=True,
+          )
+          match = re.search(r"(\d+)\.(\d+)\.(\d+)", text)
+          if not match:
+              raise SystemExit(f"Could not parse XcodeGen version: {text!r}")
+
+          actual = tuple(map(int, match.groups()))
+          minimum = tuple(
+              map(int, os.environ["MIN_XCODEGEN_VERSION"].split("."))
+          )
+
+          if actual < minimum:
+              raise SystemExit(
+                  f"XcodeGen {actual} is older than required {minimum}"
+              )
+
+          print(f"PASS: XcodeGen {actual} >= {minimum}")
+          PY
+
+      - name: Generate and verify Xcode project
+        run: |
+          set -euo pipefail
+          rm -rf HealthMonitor.xcodeproj
+          xcodegen generate
+          test -f HealthMonitor.xcodeproj/project.pbxproj
+          python3 scripts/verify_generated_project.py
+
+      - name: Validate project
+        run: |
+          set -euo pipefail
+          xcodebuild -project HealthMonitor.xcodeproj -list
+          plutil -lint HealthMonitor/Info.plist
+          plutil -lint HealthMonitor/HealthMonitor.entitlements
+          plutil -lint HealthMonitorWatch/Info.plist
+          plutil -lint HealthMonitorWatch/HealthMonitorWatch.entitlements
+
+      - name: Build watchOS target
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project HealthMonitor.xcodeproj \
+            -target HealthMonitorWatch \
+            -configuration Debug \
+            -sdk watchsimulator \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee watch-build.log
+
+      - name: Build complete iOS scheme
+        run: |
+          set -o pipefail
+          rm -rf build/DerivedData
+          xcodebuild \
+            -project HealthMonitor.xcodeproj \
+            -scheme HealthMonitor \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee ios-build.log
+
+      - name: Verify app resources
+        run: |
+          set -euo pipefail
+          APP="build/DerivedData/Build/Products/Debug-iphonesimulator/HealthMonitor.app"
+          test -d "$APP"
+          test -f "$APP/PrivacyInfo.xcprivacy"
+          find "$APP" -maxdepth 3 -type d -name '*.app' -print | tee built-apps.txt
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$APP" HealthMonitor-Simulator.app.zip
+
+      - name: Build test target
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project HealthMonitor.xcodeproj \
+            -target HealthMonitorTests \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee tests-build.log
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-monitor-public-build
+          path: |
+            environment.txt
+            xcodegen-version.txt
+            built-apps.txt
+            watch-build.log
+            ios-build.log
+            tests-build.log
+            HealthMonitor-Simulator.app.zip
+            HealthMonitor.xcodeproj/project.pbxproj
+          if-no-files-found: ignore
+          retention-days: 5

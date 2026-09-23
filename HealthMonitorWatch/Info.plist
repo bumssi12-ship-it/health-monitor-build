@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Health Monitor</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>17</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>기립 체크와 증상 발생 시 Apple Watch 심박수를 읽습니다.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>실시간 심박 측정을 위한 HealthKit workout session 권한이 필요합니다. 측정 세션은 완료 후 운동 기록으로 저장하지 않습니다.</string>
+	<key>WKCompanionAppBundleIdentifier</key>
+	<string>$(HEALTHMONITOR_BUNDLE_ID)</string>
+	<key>WKRunsIndependentlyOfCompanionApp</key>
+	<false/>
+	<key>WKBackgroundModes</key>
+	<array>
+		<string>workout-processing</string>
+	</array>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>WKApplication</key>
+	<true/>
+	<key>WKWatchOnly</key>
+	<false/>
+	<key>WKWatchKitApp</key>
+	<true/>
+</dict>
+</plist>
