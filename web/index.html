@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b6bcb">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Health Monitor export 파일을 서버 업로드 없이 브라우저에서 확인하는 로컬 전용 뷰어">
+  <title>Health Monitor Viewer</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Health Monitor Companion</p>
+      <h1>Health Monitor Viewer</h1>
+      <p class="subtitle">Android · Windows · Web에서 export/backup을 로컬로 확인</p>
+    </div>
+    <div class="privacy-badge" title="선택한 건강 파일은 이 브라우저 탭 안에서만 처리됩니다.">
+      <span class="dot"></span>
+      서버 전송 없음
+    </div>
+  </header>
+
+  <main>
+    <section class="import-panel card" aria-labelledby="import-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="import-title">파일 불러오기</h2>
+          <p>Health Monitor의 JSON 백업 또는 export CSV 여러 개를 한 번에 선택하세요.</p>
+        </div>
+        <div class="actions">
+          <button id="demoBtn" class="secondary" type="button">데모 보기</button>
+          <button id="clearBtn" class="danger-ghost" type="button">데이터 지우기</button>
+        </div>
+      </div>
+
+      <label id="dropZone" class="drop-zone" for="fileInput">
+        <input id="fileInput" type="file" multiple accept=".json,.csv,.txt,application/json,text/csv,text/plain">
+        <span class="drop-icon" aria-hidden="true">＋</span>
+        <strong>파일 선택 또는 여기로 드래그</strong>
+        <span>지원: HealthMonitor-UserBackup-*.json, summary.json, *.csv, report_7days.txt</span>
+      </label>
+
+      <div class="import-status">
+        <span id="importSummary">아직 파일을 불러오지 않았습니다.</span>
+        <span id="persistenceNote">데이터는 새로고침하면 사라집니다.</span>
+      </div>
+      <div id="importErrors" class="error-box" hidden></div>
+    </section>
+
+    <nav class="tabs" aria-label="화면 선택">
+      <button class="tab active" data-tab="dashboard" type="button">대시보드</button>
+      <button class="tab" data-tab="symptoms" type="button">증상</button>
+      <button class="tab" data-tab="orthostatic" type="button">기립 체크</button>
+      <button class="tab" data-tab="medications" type="button">약 변경</button>
+      <button class="tab" data-tab="files" type="button">가져온 파일</button>
+    </nav>
+
+    <section id="dashboard" class="tab-panel active">
+      <div class="metric-grid">
+        <article class="metric-card">
+          <span>최근 심박수</span>
+          <strong id="metricHr">—</strong>
+          <small id="metricHrTime">데이터 없음</small>
+        </article>
+        <article class="metric-card">
+          <span>최근 안정시 심박</span>
+          <strong id="metricRestingHr">—</strong>
+          <small id="metricRestingHrTime">데이터 없음</small>
+        </article>
+        <article class="metric-card">
+          <span>최근 HRV</span>
+          <strong id="metricHrv">—</strong>
+          <small id="metricHrvTime">데이터 없음</small>
+        </article>
+        <article class="metric-card">
+          <span>오늘 걸음수</span>
+          <strong id="metricSteps">—</strong>
+          <small>daily_metrics 기준</small>
+        </article>
+        <article class="metric-card">
+          <span>최근 수면</span>
+          <strong id="metricSleep">—</strong>
+          <small id="metricSleepDay">데이터 없음</small>
+        </article>
+        <article class="metric-card">
+          <span>최근 7일 증상</span>
+          <strong id="metricSymptoms">—</strong>
+          <small>직접 기록 기준</small>
+        </article>
+        <article class="metric-card">
+          <span>최근 기립 HR 변화</span>
+          <strong id="metricOrtho">—</strong>
+          <small id="metricOrthoTime">데이터 없음</small>
+        </article>
+        <article class="metric-card">
+          <span>마지막 Health 동기화</span>
+          <strong id="metricSync">—</strong>
+          <small id="metricCoverage">summary.json이 있으면 표시</small>
+        </article>
+      </div>
+
+      <div class="chart-grid">
+        <article class="card chart-card">
+          <div class="chart-title"><h3>걸음수 추세</h3><span>최근 14일</span></div>
+          <canvas id="stepsChart" height="190" aria-label="걸음수 추세 차트"></canvas>
+          <p id="stepsEmpty" class="empty">daily_metrics.csv를 불러오면 표시됩니다.</p>
+        </article>
+        <article class="card chart-card">
+          <div class="chart-title"><h3>안정시 심박</h3><span>최근 14일</span></div>
+          <canvas id="restingChart" height="190" aria-label="안정시 심박 추세 차트"></canvas>
+          <p id="restingEmpty" class="empty">health_samples.csv를 불러오면 표시됩니다.</p>
+        </article>
+        <article class="card chart-card">
+          <div class="chart-title"><h3>HRV (SDNN)</h3><span>최근 14일</span></div>
+          <canvas id="hrvChart" height="190" aria-label="HRV 추세 차트"></canvas>
+          <p id="hrvEmpty" class="empty">health_samples.csv를 불러오면 표시됩니다.</p>
+        </article>
+        <article class="card chart-card">
+          <div class="chart-title"><h3>수면 시간</h3><span>최근 14일</span></div>
+          <canvas id="sleepChart" height="190" aria-label="수면 추세 차트"></canvas>
+          <p id="sleepEmpty" class="empty">sleep 샘플이 있으면 표시됩니다.</p>
+        </article>
+      </div>
+
+      <article class="card note-card">
+        <h3>해석 범위</h3>
+        <p>
+          이 화면은 Health Monitor가 기록한 데이터를 정리해서 보여주는 개인 추세 확인용입니다.
+          진단이나 응급 판단을 대신하지 않습니다. Apple Health의 실제 권한·백그라운드 동작·Watch 통신은
+          iPhone/Apple Watch 실기기에서만 검증할 수 있습니다.
+        </p>
+      </article>
+    </section>
+
+    <section id="symptoms" class="tab-panel">
+      <article class="card">
+        <div class="table-heading">
+          <div><h2>증상 기록</h2><p id="symptomCountText">0건</p></div>
+          <input id="symptomSearch" type="search" placeholder="증상·자세·메모 검색">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>시간</th><th>증상</th><th>자세</th><th>강도</th><th>심박</th><th>메모</th></tr></thead>
+            <tbody id="symptomRows"></tbody>
+          </table>
+        </div>
+        <p id="symptomEmpty" class="empty">증상 기록이 없습니다.</p>
+      </article>
+    </section>
+
+    <section id="orthostatic" class="tab-panel">
+      <article class="card">
+        <div class="table-heading">
+          <div><h2>기립 체크</h2><p id="orthoCountText">0건</p></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>시간</th><th>기준 HR</th><th>최고 HR</th><th>최종 HR</th><th>최고 Δ</th><th>최종 Δ</th><th>완료</th></tr></thead>
+            <tbody id="orthoRows"></tbody>
+          </table>
+        </div>
+        <p id="orthoEmpty" class="empty">기립 체크 기록이 없습니다.</p>
+      </article>
+    </section>
+
+    <section id="medications" class="tab-panel">
+      <article class="card">
+        <div class="table-heading">
+          <div><h2>약 변경 기록</h2><p id="medicationCountText">0건</p></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>시간</th><th>약 이름</th><th>용량</th><th>메모</th></tr></thead>
+            <tbody id="medicationRows"></tbody>
+          </table>
+        </div>
+        <p id="medicationEmpty" class="empty">약 변경 기록이 없습니다.</p>
+      </article>
+    </section>
+
+    <section id="files" class="tab-panel">
+      <article class="card">
+        <h2>가져온 파일</h2>
+        <p class="muted">파일 내용은 서버에 업로드되지 않고 현재 브라우저 메모리에서만 처리됩니다.</p>
+        <ul id="fileList" class="file-list"></ul>
+        <details class="report-details">
+          <summary>7일 보고서 원문</summary>
+          <pre id="reportText">report_7days.txt를 불러오면 여기에 표시됩니다.</pre>
+        </details>
+      </article>
+    </section>
+  </main>
+
+  <footer>
+    <span>Health Monitor Viewer · local-first</span>
+    <span id="appVersion">Web v1</span>
+  </footer>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
