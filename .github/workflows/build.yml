@@ -6,7 +6,10 @@ on:
       - main
     paths-ignore:
       - ".github/workflows/testflight-release.yml"
+      - ".github/workflows/pages.yml"
+      - ".github/workflows/web-verify.yml"
       - "PUBLIC_BUILD_README.md"
+      - "web/**"
   workflow_dispatch:
 
 permissions:
