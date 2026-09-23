@@ -44,8 +44,6 @@ jobs:
       - name: Validate required signing secrets
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_DISTRIBUTION_CERT_P12_BASE64: ${{ secrets.APPLE_DISTRIBUTION_CERT_P12_BASE64 }}
-          APPLE_DISTRIBUTION_CERT_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERT_PASSWORD }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_P8_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_P8_BASE64 }}
@@ -54,8 +52,6 @@ jobs:
           missing=0
           for name in \
             APPLE_TEAM_ID \
-            APPLE_DISTRIBUTION_CERT_P12_BASE64 \
-            APPLE_DISTRIBUTION_CERT_PASSWORD \
             APP_STORE_CONNECT_KEY_ID \
             APP_STORE_CONNECT_ISSUER_ID \
             APP_STORE_CONNECT_KEY_P8_BASE64
@@ -135,59 +131,26 @@ jobs:
           echo "RELEASE_BUILD_NUMBER=$build" >> "$GITHUB_ENV"
           echo "Release version: $version ($build)"
 
-      - name: Install Apple signing certificate and API key
+      - name: Install App Store Connect API key
         env:
-          CERT_B64: ${{ secrets.APPLE_DISTRIBUTION_CERT_P12_BASE64 }}
-          CERT_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERT_PASSWORD }}
           ASC_KEY_B64: ${{ secrets.APP_STORE_CONNECT_KEY_P8_BASE64 }}
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
         run: |
           set -euo pipefail
 
-          CERT_PATH="$RUNNER_TEMP/health-monitor-distribution.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/health-monitor-signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
           ASC_KEY_DIR="$HOME/.appstoreconnect/private_keys"
           ASC_KEY_PATH="$ASC_KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
 
-          export CERT_PATH ASC_KEY_PATH CERT_B64 ASC_KEY_B64
+          mkdir -p "$ASC_KEY_DIR"
+          export ASC_KEY_PATH ASC_KEY_B64
           python3 - <<'PY'
           import base64, os, pathlib
-          pathlib.Path(os.environ["CERT_PATH"]).write_bytes(
-              base64.b64decode(os.environ["CERT_B64"], validate=True)
-          )
-          pathlib.Path(os.environ["ASC_KEY_PATH"]).parent.mkdir(
-              parents=True, exist_ok=True
-          )
           pathlib.Path(os.environ["ASC_KEY_PATH"]).write_bytes(
               base64.b64decode(os.environ["ASC_KEY_B64"], validate=True)
           )
           PY
 
           chmod 600 "$ASC_KEY_PATH"
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERT_PATH" \
-            -k "$KEYCHAIN_PATH" \
-            -P "$CERT_PASSWORD" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/security
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s \
-            -k "$KEYCHAIN_PASSWORD" \
-            "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH"
-          security default-keychain -d user -s "$KEYCHAIN_PATH"
-
-          identities="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")"
-          echo "$identities"
-          echo "$identities" | grep -q "Apple Distribution"
-
-          echo "SIGNING_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-          echo "SIGNING_CERT_PATH=$CERT_PATH" >> "$GITHUB_ENV"
           echo "ASC_KEY_PATH=$ASC_KEY_PATH" >> "$GITHUB_ENV"
 
       - name: Archive signed Release build
@@ -320,6 +283,7 @@ jobs:
             echo "- Bundle ID: $APP_BUNDLE_ID"
             echo "- Watch bundle ID: $WATCH_BUNDLE_ID"
             echo "- Xcode: $(xcodebuild -version | head -1)"
+            echo "- Signing uses Apple cloud-managed distribution certificates."
             echo "- Upload was manual-only and required confirm_upload=true."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -327,9 +291,5 @@ jobs:
         if: always()
         run: |
           set +e
-          if [ -n "${SIGNING_KEYCHAIN_PATH:-}" ]; then
-            security delete-keychain "$SIGNING_KEYCHAIN_PATH"
-          fi
-          rm -f "${SIGNING_CERT_PATH:-}"
           rm -f "${ASC_KEY_PATH:-}"
           rm -f "$RUNNER_TEMP/ExportOptions.plist"
