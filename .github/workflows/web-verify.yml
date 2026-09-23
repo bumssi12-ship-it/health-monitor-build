@@ -1,0 +1,23 @@
+name: Health Monitor Web Verify
+
+on:
+  pull_request:
+    paths:
+      - "web/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - run: node --test web/core.test.mjs
+      - run: node --check web/app.js
+      - run: node --check web/core.mjs
+      - run: python3 -m json.tool web/manifest.webmanifest >/dev/null
