@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Environment
         run: |
@@ -153,6 +153,36 @@ jobs:
           test -d "$APP"
           test -f "$APP/PrivacyInfo.xcprivacy"
           test -d "$APP/PlugIns/HealthMonitorWatch.app"
+          IOS_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist")
+          WATCH_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/PlugIns/HealthMonitorWatch.app/Info.plist")
+          test "$IOS_ID" = "com.bom.healthmonitor"
+          test "$WATCH_ID" = "com.bom.healthmonitor.watchapp"
+          echo "iOS bundle: $IOS_ID"
+          echo "Watch bundle: $WATCH_ID"
+          find build/HealthMonitor.xcarchive/Products -maxdepth 5 -type d -name '*.app' -print | tee archive-apps.txt
+
+      - name: Build unsigned Release archive for physical devices
+        run: |
+          set -o pipefail
+          rm -rf build/HealthMonitor.xcarchive build/ArchiveDerivedData
+          xcodebuild \
+            -project HealthMonitor.xcodeproj \
+            -scheme HealthMonitor \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/HealthMonitor.xcarchive \
+            -derivedDataPath build/ArchiveDerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            archive | tee archive-build.log
+
+      - name: Verify unsigned device archive
+        run: |
+          set -euo pipefail
+          APP="build/HealthMonitor.xcarchive/Products/Applications/HealthMonitor.app"
+          test -d "$APP"
+          test -f "$APP/PrivacyInfo.xcprivacy"
+          test -d "$APP/PlugIns/HealthMonitorWatch.app"
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/PlugIns/HealthMonitorWatch.app/Info.plist"
           find build/HealthMonitor.xcarchive/Products -maxdepth 5 -type d -name '*.app' -print | tee archive-apps.txt
@@ -171,7 +201,7 @@ jobs:
 
       - name: Upload diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: health-monitor-public-build
           path: |
@@ -181,6 +211,8 @@ jobs:
             watch-build.log
             ios-build.log
             tests-build.log
+            archive-build.log
+            archive-apps.txt
             archive-build.log
             archive-apps.txt
             HealthMonitor-Simulator.app.zip
