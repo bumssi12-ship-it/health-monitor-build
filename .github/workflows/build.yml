@@ -1,6 +1,9 @@
 name: Health Monitor Public Apple Build
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
