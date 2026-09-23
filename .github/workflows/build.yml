@@ -131,16 +131,17 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent \
             "$APP" HealthMonitor-Simulator.app.zip
 
-      - name: Build test target
+      - name: Build tests with scheme
         run: |
           set -o pipefail
           xcodebuild \
             -project HealthMonitor.xcodeproj \
-            -target HealthMonitorTests \
+            -scheme HealthMonitor \
             -configuration Debug \
-            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/TestDerivedData \
             CODE_SIGNING_ALLOWED=NO \
-            build | tee tests-build.log
+            build-for-testing | tee tests-build.log
 
       - name: Upload diagnostics
         if: always()
