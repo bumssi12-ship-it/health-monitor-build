@@ -503,3 +503,22 @@ footer {
     padding: 0 15px 24px;
   }
 }
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.install-button {
+  border: 1px solid var(--line);
+}
+
+@media (max-width: 620px) {
+  .top-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
