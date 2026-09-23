@@ -1415,3 +1415,38 @@ if (
 }
 
 renderAll();
+
+
+let deferredInstallPrompt = null;
+const installAppBtn = document.getElementById("installAppBtn");
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  if (installAppBtn) {
+    installAppBtn.hidden = false;
+  }
+});
+
+if (installAppBtn) {
+  installAppBtn.addEventListener("click", async () => {
+    if (!deferredInstallPrompt) return;
+
+    installAppBtn.disabled = true;
+    try {
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+    } finally {
+      deferredInstallPrompt = null;
+      installAppBtn.hidden = true;
+      installAppBtn.disabled = false;
+    }
+  });
+}
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  if (installAppBtn) {
+    installAppBtn.hidden = true;
+  }
+});
