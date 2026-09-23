@@ -57,16 +57,25 @@ struct HealthAnalyticsCoreTests {
             CSVSanitizer.protectSpreadsheetFormula(" \t@cmd")
                 == "' \t@cmd"
         )
+        #expect(
+            CSVSanitizer.protectSpreadsheetFormula("\u{FEFF}+CMD")
+                == "'\u{FEFF}+CMD"
+        )
+        #expect(
+            CSVSanitizer.protectSpreadsheetFormula("\r=1+1")
+                == "'\r=1+1"
+        )
         #expect(CSVSanitizer.protectSpreadsheetFormula("-12.5") == "-12.5")
         #expect(CSVSanitizer.escape("hello,world") == "\"hello,world\"")
     }
 
-    @Test("Heart-rate freshness rejects old or future readings")
+    @Test("Heart-rate freshness honors exact boundary")
     func heartRateFreshness() {
         let now = Date(timeIntervalSince1970: 10_000)
+
         #expect(
             DataFreshness.isFresh(
-                timestamp: now.addingTimeInterval(-599),
+                timestamp: now.addingTimeInterval(-600),
                 now: now,
                 maximumAge: 600
             )
@@ -89,13 +98,91 @@ struct HealthAnalyticsCoreTests {
 
     @Test("User backup validates and round-trips")
     func backupRoundTrip() throws {
-        let envelope = UserBackupEnvelope(
+        let now = Date(timeIntervalSince1970: 2_000)
+        let envelope = validEnvelope(now: now)
+
+        _ = try envelope.validated(now: now)
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(envelope)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let restored = try decoder.decode(UserBackupEnvelope.self, from: data)
+
+        #expect(restored.symptoms.first?.eventID == "symptom-1")
+    }
+
+    @Test("Backup rejects unsupported format")
+    func backupRejectsUnsupportedFormat() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let base = validEnvelope(now: now)
+        let bad = UserBackupEnvelope(
+            formatVersion: 999,
+            generatedAt: base.generatedAt,
+            symptoms: base.symptoms,
+            medications: base.medications,
+            orthostaticSessions: base.orthostaticSessions
+        )
+
+        #expect(rejects(bad, now: now))
+    }
+
+    @Test("Backup rejects invalid symptom ranges")
+    func backupRejectsInvalidSymptomRanges() {
+        let now = Date(timeIntervalSince1970: 2_000)
+
+        let lowHR = envelopeWithSymptom(
+            now: now,
+            severity: 5,
+            heartRate: 19
+        )
+        let highHR = envelopeWithSymptom(
+            now: now,
+            severity: 5,
+            heartRate: 301
+        )
+        let highSeverity = envelopeWithSymptom(
+            now: now,
+            severity: 11,
+            heartRate: 88
+        )
+
+        #expect(rejects(lowHR, now: now))
+        #expect(rejects(highHR, now: now))
+        #expect(rejects(highSeverity, now: now))
+    }
+
+    @Test("Backup accepts heart-rate range boundaries")
+    func backupAcceptsHeartRateBoundaries() throws {
+        let now = Date(timeIntervalSince1970: 2_000)
+
+        _ = try envelopeWithSymptom(
+            now: now,
+            severity: 0,
+            heartRate: 20
+        ).validated(now: now)
+
+        _ = try envelopeWithSymptom(
+            now: now,
+            severity: 10,
+            heartRate: 300
+        ).validated(now: now)
+    }
+
+    @Test("Backup rejects clearly future timestamps")
+    func backupRejectsFutureTimestamp() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let future = now.addingTimeInterval(24 * 60 * 60 + 1)
+
+        let bad = UserBackupEnvelope(
             formatVersion: UserBackupEnvelope.currentFormatVersion,
-            generatedAt: Date(timeIntervalSince1970: 1_000),
+            generatedAt: now,
             symptoms: [
                 UserBackupSymptom(
-                    eventID: "symptom-1",
-                    timestamp: Date(timeIntervalSince1970: 900),
+                    eventID: "future",
+                    timestamp: future,
                     symptom: "어지러움",
                     posture: "서 있음",
                     severity: 5,
@@ -107,16 +194,138 @@ struct HealthAnalyticsCoreTests {
             orthostaticSessions: []
         )
 
-        _ = try envelope.validated()
+        #expect(rejects(bad, now: now))
+    }
 
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(envelope)
+    @Test("Backup rejects invalid medication dose")
+    func backupRejectsInvalidMedicationDose() {
+        let now = Date(timeIntervalSince1970: 2_000)
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let restored = try decoder.decode(UserBackupEnvelope.self, from: data)
+        for dose in [-1.0, 1_000_001.0, Double.nan] {
+            let bad = UserBackupEnvelope(
+                formatVersion: UserBackupEnvelope.currentFormatVersion,
+                generatedAt: now,
+                symptoms: [],
+                medications: [
+                    UserBackupMedication(
+                        eventID: "med",
+                        timestamp: now,
+                        name: "Test",
+                        dose: dose,
+                        unit: "mg",
+                        note: ""
+                    )
+                ],
+                orthostaticSessions: []
+            )
 
-        #expect(restored.symptoms.first?.eventID == "symptom-1")
+            #expect(rejects(bad, now: now))
+        }
+    }
+
+    @Test("Backup rejects invalid orthostatic values")
+    func backupRejectsInvalidOrthostaticValues() {
+        let now = Date(timeIntervalSince1970: 2_000)
+
+        let longSession = UserBackupEnvelope(
+            formatVersion: UserBackupEnvelope.currentFormatVersion,
+            generatedAt: now,
+            symptoms: [],
+            medications: [],
+            orthostaticSessions: [
+                UserBackupOrthostatic(
+                    eventID: "ortho-long",
+                    timestamp: now,
+                    baselineHeartRate: 70,
+                    peakStandingHeartRate: 90,
+                    finalStandingHeartRate: 85,
+                    peakDelta: 20,
+                    finalDelta: 15,
+                    durationSeconds: 3_601,
+                    completed: true,
+                    note: ""
+                )
+            ]
+        )
+
+        let badDelta = UserBackupEnvelope(
+            formatVersion: UserBackupEnvelope.currentFormatVersion,
+            generatedAt: now,
+            symptoms: [],
+            medications: [],
+            orthostaticSessions: [
+                UserBackupOrthostatic(
+                    eventID: "ortho-delta",
+                    timestamp: now,
+                    baselineHeartRate: 70,
+                    peakStandingHeartRate: 90,
+                    finalStandingHeartRate: 85,
+                    peakDelta: 251,
+                    finalDelta: 15,
+                    durationSeconds: 180,
+                    completed: true,
+                    note: ""
+                )
+            ]
+        )
+
+        #expect(rejects(longSession, now: now))
+        #expect(rejects(badDelta, now: now))
+    }
+
+    private func validEnvelope(now: Date) -> UserBackupEnvelope {
+        UserBackupEnvelope(
+            formatVersion: UserBackupEnvelope.currentFormatVersion,
+            generatedAt: now,
+            symptoms: [
+                UserBackupSymptom(
+                    eventID: "symptom-1",
+                    timestamp: now.addingTimeInterval(-100),
+                    symptom: "어지러움",
+                    posture: "서 있음",
+                    severity: 5,
+                    heartRate: 88,
+                    note: ""
+                )
+            ],
+            medications: [],
+            orthostaticSessions: []
+        )
+    }
+
+    private func envelopeWithSymptom(
+        now: Date,
+        severity: Int,
+        heartRate: Double?
+    ) -> UserBackupEnvelope {
+        UserBackupEnvelope(
+            formatVersion: UserBackupEnvelope.currentFormatVersion,
+            generatedAt: now,
+            symptoms: [
+                UserBackupSymptom(
+                    eventID: "symptom",
+                    timestamp: now,
+                    symptom: "어지러움",
+                    posture: "서 있음",
+                    severity: severity,
+                    heartRate: heartRate,
+                    note: ""
+                )
+            ],
+            medications: [],
+            orthostaticSessions: []
+        )
+    }
+
+    private func rejects(
+        _ envelope: UserBackupEnvelope,
+        now: Date
+    ) -> Bool {
+        do {
+            _ = try envelope.validated(now: now)
+            return false
+        } catch {
+            return true
+        }
     }
 }
