@@ -1,0 +1,59 @@
+name: Deploy Health Monitor Viewer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "web/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: health-monitor-pages
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Web unit tests
+        run: node --test web/core.test.mjs
+      - name: Syntax and manifest
+        run: |
+          node --check web/app.js
+          node --check web/core.mjs
+          python3 -m json.tool web/manifest.webmanifest >/dev/null
+      - name: Reject external scripts and trackers
+        run: |
+          if grep -RInE '<script[^>]+src="https?://|https?://(www\.)?(google-analytics|googletagmanager|facebook|segment|mixpanel)' web; then
+            echo "External script/tracker reference found"
+            exit 1
+          fi
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-slim
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload static viewer
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: web
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
